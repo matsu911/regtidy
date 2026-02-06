@@ -125,3 +125,153 @@ fn truncate_digest(digest: &str) -> &str {
         digest
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{DateTime, Duration, Utc};
+    use crate::models::TagInfo;
+
+    fn make_tag(repo: &str, tag: &str, digest: &str, created: Option<DateTime<Utc>>) -> TagInfo {
+        TagInfo {
+            repository: repo.to_string(),
+            tag: tag.to_string(),
+            digest: digest.to_string(),
+            created,
+        }
+    }
+
+    #[test]
+    fn test_keep_recent_basic() {
+        let now = Utc::now();
+        let tags = vec![
+            make_tag("r", "t1", "d1", Some(now - Duration::days(5))),
+            make_tag("r", "t2", "d2", Some(now - Duration::days(4))),
+            make_tag("r", "t3", "d3", Some(now - Duration::days(3))),
+            make_tag("r", "t4", "d4", Some(now - Duration::days(2))),
+            make_tag("r", "t5", "d5", Some(now - Duration::days(1))),
+        ];
+
+        let strategy = Strategy::KeepRecent(3);
+        let plan = strategy.apply("r", tags);
+
+        let kept_tags: Vec<&str> = plan.to_keep.iter().map(|t| t.tag.as_str()).collect();
+        let deleted_tags: Vec<&str> = plan.to_delete.iter().map(|t| t.tag.as_str()).collect();
+
+        assert_eq!(plan.to_keep.len(), 3);
+        assert_eq!(plan.to_delete.len(), 2);
+        assert!(kept_tags.contains(&"t5"));
+        assert!(kept_tags.contains(&"t4"));
+        assert!(kept_tags.contains(&"t3"));
+        assert!(deleted_tags.contains(&"t1"));
+        assert!(deleted_tags.contains(&"t2"));
+    }
+
+    #[test]
+    fn test_keep_recent_more_than_available() {
+        let now = Utc::now();
+        let tags = vec![
+            make_tag("r", "t1", "d1", Some(now - Duration::days(3))),
+            make_tag("r", "t2", "d2", Some(now - Duration::days(2))),
+            make_tag("r", "t3", "d3", Some(now - Duration::days(1))),
+        ];
+
+        let strategy = Strategy::KeepRecent(10);
+        let plan = strategy.apply("r", tags);
+
+        assert_eq!(plan.to_keep.len(), 3);
+        assert_eq!(plan.to_delete.len(), 0);
+    }
+
+    #[test]
+    fn test_older_than_basic() {
+        let now = Utc::now();
+        let tags = vec![
+            make_tag("r", "old1", "d1", Some(now - Duration::days(60))),
+            make_tag("r", "old2", "d2", Some(now - Duration::days(45))),
+            make_tag("r", "new1", "d3", Some(now - Duration::days(10))),
+            make_tag("r", "new2", "d4", Some(now - Duration::days(5))),
+        ];
+
+        let strategy = Strategy::OlderThan(30);
+        let plan = strategy.apply("r", tags);
+
+        let kept_tags: Vec<&str> = plan.to_keep.iter().map(|t| t.tag.as_str()).collect();
+        let deleted_tags: Vec<&str> = plan.to_delete.iter().map(|t| t.tag.as_str()).collect();
+
+        assert_eq!(plan.to_delete.len(), 2);
+        assert_eq!(plan.to_keep.len(), 2);
+        assert!(deleted_tags.contains(&"old1"));
+        assert!(deleted_tags.contains(&"old2"));
+        assert!(kept_tags.contains(&"new1"));
+        assert!(kept_tags.contains(&"new2"));
+    }
+
+    #[test]
+    fn test_older_than_unknown_date_kept() {
+        let now = Utc::now();
+        let tags = vec![
+            make_tag("r", "old", "d1", Some(now - Duration::days(60))),
+            make_tag("r", "unknown", "d2", None),
+        ];
+
+        let strategy = Strategy::OlderThan(30);
+        let plan = strategy.apply("r", tags);
+
+        let kept_tags: Vec<&str> = plan.to_keep.iter().map(|t| t.tag.as_str()).collect();
+
+        assert_eq!(plan.to_delete.len(), 1);
+        assert_eq!(plan.to_delete[0].tag, "old");
+        assert!(kept_tags.contains(&"unknown"));
+    }
+
+    #[test]
+    fn test_pattern_matching() {
+        let tags = vec![
+            make_tag("r", "v1.0", "d1", None),
+            make_tag("r", "dev-abc", "d2", None),
+            make_tag("r", "dev-xyz", "d3", None),
+            make_tag("r", "v2.0", "d4", None),
+        ];
+
+        let strategy = Strategy::Pattern(Regex::new("^dev-").unwrap());
+        let plan = strategy.apply("r", tags);
+
+        let kept_tags: Vec<&str> = plan.to_keep.iter().map(|t| t.tag.as_str()).collect();
+        let deleted_tags: Vec<&str> = plan.to_delete.iter().map(|t| t.tag.as_str()).collect();
+
+        assert_eq!(plan.to_delete.len(), 2);
+        assert_eq!(plan.to_keep.len(), 2);
+        assert!(deleted_tags.contains(&"dev-abc"));
+        assert!(deleted_tags.contains(&"dev-xyz"));
+        assert!(kept_tags.contains(&"v1.0"));
+        assert!(kept_tags.contains(&"v2.0"));
+    }
+
+    #[test]
+    fn test_shared_digest_safety() {
+        let now = Utc::now();
+        // t1 and t2 share digest "shared-digest"
+        // KeepRecent(1) keeps only the newest (t2), so t1 would normally be deleted.
+        // But since t1 shares a digest with t2 (which is kept), t1 should also be kept.
+        let tags = vec![
+            make_tag("r", "t1", "shared-digest", Some(now - Duration::days(2))),
+            make_tag("r", "t2", "shared-digest", Some(now - Duration::days(1))),
+            make_tag("r", "t3", "other-digest", Some(now - Duration::days(3))),
+        ];
+
+        let strategy = Strategy::KeepRecent(1);
+        let plan = strategy.apply("r", tags);
+
+        let kept_tags: Vec<&str> = plan.to_keep.iter().map(|t| t.tag.as_str()).collect();
+        let deleted_tags: Vec<&str> = plan.to_delete.iter().map(|t| t.tag.as_str()).collect();
+
+        // t2 is kept by strategy (newest), t1 is kept by shared-digest safety
+        assert!(kept_tags.contains(&"t2"));
+        assert!(kept_tags.contains(&"t1"));
+        // t3 has a unique digest and is old, so it's deleted
+        assert!(deleted_tags.contains(&"t3"));
+        assert_eq!(plan.to_delete.len(), 1);
+        assert_eq!(plan.to_keep.len(), 2);
+    }
+}

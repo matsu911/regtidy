@@ -306,3 +306,29 @@ impl RegistryClient {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_url_relative() {
+        let client = RegistryClient::new("http://localhost:5000", false);
+        let resolved = client.resolve_url("/v2/_catalog?n=100&last=foo");
+        assert_eq!(resolved, "http://localhost:5000/v2/_catalog?n=100&last=foo");
+    }
+
+    #[test]
+    fn test_resolve_url_absolute() {
+        let client = RegistryClient::new("http://localhost:5000", false);
+        let resolved = client.resolve_url("http://other:5000/v2/_catalog?n=100");
+        assert_eq!(resolved, "http://other:5000/v2/_catalog?n=100");
+    }
+
+    #[test]
+    fn test_resolve_url_strips_trailing_slash() {
+        let client = RegistryClient::new("http://localhost:5000/", false);
+        let resolved = client.resolve_url("/v2/_catalog");
+        assert_eq!(resolved, "http://localhost:5000/v2/_catalog");
+    }
+}
