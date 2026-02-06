@@ -105,6 +105,8 @@ async fn run() -> Result<()> {
                 }
             }
 
+            let mut deleted_digests_this_repo: HashSet<String> = HashSet::new();
+
             for digest in &digests_to_delete {
                 match client.delete_manifest(repo, digest).await {
                     Ok(()) => {
@@ -112,6 +114,7 @@ async fn run() -> Result<()> {
                             eprintln!("[DEBUG] Deleted digest {}", digest);
                         }
                         all_deleted_digests.insert(digest.clone());
+                        deleted_digests_this_repo.insert(digest.clone());
                     }
                     Err(e) => {
                         eprintln!("[ERROR] Failed to delete digest {}: {}", digest, e);
@@ -120,7 +123,12 @@ async fn run() -> Result<()> {
                 }
             }
 
-            total_deleted += plan.to_delete.len();
+            // Only count tags whose digests were actually deleted
+            for tag in &plan.to_delete {
+                if deleted_digests_this_repo.contains(&tag.digest) {
+                    total_deleted += 1;
+                }
+            }
         }
     }
 
