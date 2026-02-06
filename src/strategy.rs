@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use chrono::Utc;
 use regex::Regex;
 
-use crate::cli::Cli;
+use crate::cli::CleanArgs;
 use crate::error::AppError;
 use crate::models::{CleanupPlan, TagInfo};
 
@@ -15,13 +15,13 @@ pub enum Strategy {
 }
 
 impl Strategy {
-    /// Build a Strategy from CLI arguments
-    pub fn from_cli(cli: &Cli) -> Result<Self, AppError> {
-        if let Some(n) = cli.keep {
+    /// Build a Strategy from clean subcommand arguments
+    pub fn from_args(args: &CleanArgs) -> Result<Self, AppError> {
+        if let Some(n) = args.keep {
             Ok(Strategy::KeepRecent(n))
-        } else if let Some(days) = cli.older_than {
+        } else if let Some(days) = args.older_than {
             Ok(Strategy::OlderThan(days))
-        } else if let Some(ref pat) = cli.pattern {
+        } else if let Some(ref pat) = args.pattern {
             let re = Regex::new(pat)?;
             Ok(Strategy::Pattern(re))
         } else {

@@ -2,6 +2,22 @@ use colored::Colorize;
 
 use crate::models::{CleanupPlan, TagInfo};
 
+/// Print a repository's tags (for the list subcommand)
+pub fn print_repo_tags(repo: &str, tags: &[TagInfo]) {
+    println!("\nRepository: {}", repo.bold());
+    println!("{}", "─".repeat(60));
+
+    if tags.is_empty() {
+        println!("  {}", "No tags found.".dimmed());
+        return;
+    }
+
+    println!("  {} ({}):", "TAGS".cyan().bold(), tags.len());
+    for tag in tags {
+        print_tag_line(tag, "TAG");
+    }
+}
+
 /// Print the cleanup plan for a repository
 pub fn print_plan(plan: &CleanupPlan, dry_run: bool) {
     let header = if dry_run {
@@ -47,6 +63,7 @@ fn print_tag_line(tag: &TagInfo, action: &str) {
     let label = match action {
         "DELETE" => "DELETE".red().bold().to_string(),
         "KEEP" => "  KEEP".green().bold().to_string(),
+        "TAG" => "   TAG".cyan().bold().to_string(),
         _ => action.to_string(),
     };
 

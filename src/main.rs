@@ -11,8 +11,8 @@ use std::process;
 use anyhow::Result;
 use clap::Parser;
 
-use cli::Cli;
-use output::{print_plan, print_summary};
+use cli::{Cli, Command};
+use output::{print_plan, print_repo_tags, print_summary};
 use registry::RegistryClient;
 use strategy::Strategy;
 
@@ -26,14 +26,6 @@ async fn main() {
 
 async fn run() -> Result<()> {
     let cli = Cli::parse();
-
-    let strategy = Strategy::from_cli(&cli)?;
-
-    if cli.verbose {
-        eprintln!("[DEBUG] Strategy: {:?}", strategy);
-        eprintln!("[DEBUG] Registry: {}", cli.registry);
-        eprintln!("[DEBUG] Dry run: {}", cli.dry_run);
-    }
 
     let client = RegistryClient::new(&cli.registry, cli.verbose);
 
@@ -53,13 +45,109 @@ async fn run() -> Result<()> {
         return Ok(());
     }
 
+    match cli.command {
+        Command::List => run_list(&client, &repos, cli.verbose).await,
+        Command::Dangling => run_dangling(&client, &repos, cli.verbose).await,
+        Command::Clean(args) => run_clean(&client, &repos, &args, cli.verbose).await,
+    }
+}
+
+async fn run_dangling(client: &RegistryClient, repos: &[String], verbose: bool) -> Result<()> {
+    let mut dangling: Vec<String> = Vec::new();
+
+    for repo in repos {
+        if verbose {
+            eprintln!("[DEBUG] Checking repository: {}", repo);
+        }
+
+        let tags = match client.list_tags(repo).await {
+            Ok(tags) => tags,
+            Err(e) => {
+                eprintln!("[ERROR] Failed to list tags for {}: {}", repo, e);
+                continue;
+            }
+        };
+
+        if tags.is_empty() {
+            dangling.push(repo.clone());
+        }
+    }
+
+    if dangling.is_empty() {
+        println!("No dangling repositories found.");
+    } else {
+        println!(
+            "Found {} dangling {} (no tags):",
+            dangling.len(),
+            if dangling.len() == 1 {
+                "repository"
+            } else {
+                "repositories"
+            }
+        );
+        for repo in &dangling {
+            println!("  - {}", repo);
+        }
+        println!(
+            "\nRun registry garbage collection to reclaim storage:"
+        );
+        println!(
+            "  docker exec <registry-container> bin/registry garbage-collect /etc/docker/registry/config.yml"
+        );
+    }
+
+    Ok(())
+}
+
+async fn run_list(client: &RegistryClient, repos: &[String], verbose: bool) -> Result<()> {
+    let mut total_tags: usize = 0;
+
+    for repo in repos {
+        if verbose {
+            eprintln!("[DEBUG] Listing repository: {}", repo);
+        }
+
+        let tags = match client.resolve_all_tags(repo).await {
+            Ok(tags) => tags,
+            Err(e) => {
+                eprintln!("[ERROR] Failed to resolve tags for {}: {}", repo, e);
+                continue;
+            }
+        };
+
+        total_tags += tags.len();
+        print_repo_tags(repo, &tags);
+    }
+
+    println!(
+        "\n{} repositories, {} tags total.",
+        repos.len(),
+        total_tags
+    );
+
+    Ok(())
+}
+
+async fn run_clean(
+    client: &RegistryClient,
+    repos: &[String],
+    args: &cli::CleanArgs,
+    verbose: bool,
+) -> Result<()> {
+    let strategy = Strategy::from_args(args)?;
+
+    if verbose {
+        eprintln!("[DEBUG] Strategy: {:?}", strategy);
+        eprintln!("[DEBUG] Dry run: {}", args.dry_run);
+    }
+
     let mut total_deleted: usize = 0;
     let mut total_kept: usize = 0;
     let mut total_errors: usize = 0;
     let mut all_deleted_digests: HashSet<String> = HashSet::new();
 
-    for repo in &repos {
-        if cli.verbose {
+    for repo in repos {
+        if verbose {
             eprintln!("[DEBUG] Processing repository: {}", repo);
         }
 
@@ -74,7 +162,7 @@ async fn run() -> Result<()> {
         };
 
         if tags.is_empty() {
-            if cli.verbose {
+            if verbose {
                 eprintln!("[DEBUG] No tags found for {}", repo);
             }
             continue;
@@ -84,12 +172,12 @@ async fn run() -> Result<()> {
         let plan = strategy.apply(repo, tags);
 
         // Print the plan
-        print_plan(&plan, cli.dry_run);
+        print_plan(&plan, args.dry_run);
 
         total_kept += plan.to_keep.len();
 
         // Execute deletions (unless dry-run)
-        if cli.dry_run {
+        if args.dry_run {
             total_deleted += plan.to_delete.len();
             for tag in &plan.to_delete {
                 all_deleted_digests.insert(tag.digest.clone());
@@ -110,7 +198,7 @@ async fn run() -> Result<()> {
             for digest in &digests_to_delete {
                 match client.delete_manifest(repo, digest).await {
                     Ok(()) => {
-                        if cli.verbose {
+                        if verbose {
                             eprintln!("[DEBUG] Deleted digest {}", digest);
                         }
                         all_deleted_digests.insert(digest.clone());
@@ -137,7 +225,7 @@ async fn run() -> Result<()> {
         all_deleted_digests.len(),
         total_kept,
         total_errors,
-        cli.dry_run,
+        args.dry_run,
     );
 
     if total_errors > 0 {
