@@ -23,6 +23,7 @@
             rustToolchain
             pkgs.pkg-config
             pkgs.openssl
+            pkgs.gh
           ];
         };
       }
