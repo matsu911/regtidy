@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**clearnear** is a CLI tool written in Rust that cleans up unused Docker images from private Docker Registry V2 instances. It deletes old, excess, or pattern-matched tags while preserving images referenced by kept tags via shared-digest safety checks.
+**regtidy** is a CLI tool written in Rust that cleans up unused Docker images from private Docker Registry V2 instances. It deletes old, excess, or pattern-matched tags while preserving images referenced by kept tags via shared-digest safety checks.
 
 ## Build & Run Commands
 
@@ -26,7 +26,7 @@ The dev environment is managed via Nix Flakes (`flake.nix` + `.envrc` with diren
 
 Entry point is `src/main.rs` with a `#[tokio::main]` async runtime. The flow is:
 
-1. **cli.rs** — `clap::Parser` with subcommands. Global args: `--registry` (or `CLEARNEAR_REGISTRY` env var), `--repo`, `--verbose`. Three subcommands: `list`, `dangling`, `clean`. The `clean` subcommand has a mutually exclusive strategy group (`--keep`, `--older-than`, `--pattern`) and `--dry-run`.
+1. **cli.rs** — `clap::Parser` with subcommands. Global args: `--registry` (or `REGTIDY_REGISTRY` env var), `--repo`, `--verbose`. Three subcommands: `list`, `dangling`, `clean`. The `clean` subcommand has a mutually exclusive strategy group (`--keep`, `--older-than`, `--pattern`) and `--dry-run`.
 2. **strategy.rs** — Three cleanup strategies: `KeepRecent(n)`, `OlderThan(days)`, `Pattern(regex)`. Built from `CleanArgs` via `Strategy::from_args()`. After partitioning tags, applies **shared-digest safety**: if a digest is referenced by any kept tag, all tags sharing that digest are moved to the keep list.
 3. **registry.rs** — `RegistryClient` wrapping `reqwest`. Implements Docker Registry V2 API: catalog listing, tag listing, manifest/digest resolution, blob fetching (for image creation timestamps), and manifest deletion. All paginated via `Link` header parsing. `resolve_all_tags()` uses a tokio semaphore (limit 10) for bounded concurrency.
 4. **models.rs** — Data types: `TagInfo` (tag + digest + created timestamp), `CleanupPlan` (to_delete + to_keep lists), and API response structs.

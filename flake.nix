@@ -1,5 +1,5 @@
 {
-  description = "clearnear — Docker Private Registry Image Cleaner";
+  description = "regtidy — Docker Private Registry Image Cleaner";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";

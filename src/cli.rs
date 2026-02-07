@@ -1,11 +1,11 @@
 use clap::{Parser, Subcommand};
 
-/// clearnear — Docker Private Registry Image Cleaner
+/// regtidy — Docker Private Registry Image Cleaner
 #[derive(Parser, Debug)]
-#[command(name = "clearnear", version, about)]
+#[command(name = "regtidy", version, about)]
 pub struct Cli {
     /// Registry URL (e.g., http://localhost:5000)
-    #[arg(long, env = "CLEARNEAR_REGISTRY")]
+    #[arg(long, env = "REGTIDY_REGISTRY")]
     pub registry: String,
 
     /// Repository name (omit to process all repos from catalog)
