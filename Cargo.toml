@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 description = "CLI tool to clean up unused Docker images from private Registry V2 instances"
+repository = "https://github.com/matsu911/regtidy"
 
 [dependencies]
 clap = { version = "4", features = ["derive", "env"] }
